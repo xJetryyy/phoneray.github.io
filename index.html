@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0e14">
+<title>PhoneRay</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <header class="topbar">
+    <button id="menuBtn" class="icon-btn" aria-label="Меню"><span></span><span></span><span></span></button>
+    <div class="brand" id="topTitle">PhoneRay</div>
+    <div class="chips">
+      <span class="chip" id="balChip" title="Баланс">₽ …</span>
+      <span class="chip" id="ptsChip" title="Поинты">🌐 …</span>
+    </div>
+  </header>
+
+  <div id="scrim"></div>
+
+  <aside id="sidebar" aria-label="Меню">
+    <div class="side-head">
+      <div class="logo">📱</div>
+      <div>
+        <div class="side-title">PhoneRay</div>
+        <div class="side-sub" id="sideUser">…</div>
+      </div>
+    </div>
+    <nav class="side-nav">
+      <button class="nav-item" data-tab="home"><span class="nav-ico">🏠</span><span>Главная</span></button>
+      <button class="group-head" id="cmdGroupHead" aria-expanded="true">
+        <span>Команды</span><span class="chev">▾</span>
+      </button>
+      <div class="group-body" id="cmdGroup"></div>
+    </nav>
+    <div class="side-foot">Остальные команды бота переедут сюда постепенно</div>
+  </aside>
+
+  <main id="pages">
+
+    <section class="page" id="page-home">
+      <div class="scroll">
+        <div class="hero">
+          <div class="hero-logo">📱</div>
+          <h1>PhoneRay</h1>
+          <p class="tagline">Собирай телефоны и комплектующие со всего мира, прокачивай ферму и строй свой ПК</p>
+        </div>
+
+        <div class="card">
+          <h2>О боте</h2>
+          <p>PhoneRay — игровой Telegram-бот про коллекционирование техники. Вам выпадают случайные телефоны и
+          компьютерные комплектующие разной редкости — от Мусора до Космических, Экзотических и Уникальных.
+          Их можно продавать, улучшать, ставить на ферму, собирать из деталей собственный ПК, обменивать с другими игроками
+          и выставлять на аукцион.</p>
+          <p>В это приложение постепенно переезжают все функции бота. Всё, что вы делаете здесь, сразу сохраняется и
+          в обычной текстовой версии: карточка из рулетки окажется в инвентаре бота, а баланс, поинты и перезарядки у них общие.</p>
+        </div>
+
+        <div class="facts">
+          <div class="fact"><div class="fact-k">Создан</div><div class="fact-v">11 сентября 2026</div></div>
+          <div class="fact"><div class="fact-k">Владелец</div><div class="fact-v" id="ownerLine">…</div></div>
+        </div>
+
+        <div class="card">
+          <h2>Как играть</h2>
+          <ol class="steps">
+            <li><b>Крутите «Тел» и «Пк».</b> Раз в несколько часов (таймер перезарядки виден в приложении) вам выпадает случайная карточка: телефон или деталь для ПК.</li>
+            <li><b>Смотрите на редкость и статус.</b> Редкость показывает, насколько карточка ценная, а статус «Новый» или «Б/У» влияет на цену.</li>
+            <li><b>Зарабатывайте.</b> Продавайте карточки за рубли, ставьте телефоны на ферму ради пассивного дохода, улучшайте их и собирайте из деталей готовый ПК, который тоже приносит доход.</li>
+            <li><b>Ловите ивенты.</b> Во время ивентов с мутациями карточка может получить бонус к цене и доходу. Для редких телефонов есть гарантии: «Хроматический» — раз в 15 «тел», «Экзотический» — раз в 120.</li>
+            <li><b>Прокачивайтесь.</b> Опыт за карточки повышает уровень. Начиная с 6-го уровня вы получаете Поинт 🌐 за каждый уровень и тратите его в «Апгрейдах» на перки веток Лут, Время и Контроль.</li>
+            <li><b>Остальное — в чате.</b> Ферма, крафт, размен, кузницы, рынок, трейды и аукцион пока доступны командами бота и со временем появятся здесь.</li>
+          </ol>
+          <div class="home-actions">
+            <button class="btn primary" data-go="tel">📱 Крутить «Тел»</button>
+            <button class="btn" data-go="pc">🖥 Крутить «Пк»</button>
+            <button class="btn" data-go="upgrades">🌳 Апгрейды</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Редкости</h2>
+          <div class="legend" id="legend"></div>
+        </div>
+        <div class="pad-bottom"></div>
+      </div>
+    </section>
+
+    <section class="page" id="page-tel"></section>
+    <section class="page" id="page-pc"></section>
+    <section class="page" id="page-upgrades"></section>
+
+  </main>
+
+  <div id="sheetScrim"></div>
+  <div id="sheet" aria-hidden="true">
+    <div class="sheet-handle"></div>
+    <div class="sheet-head">
+      <div class="sheet-ico" id="sheetIco">✨</div>
+      <div>
+        <div class="sheet-title" id="sheetTitle">Перк</div>
+        <div class="sheet-sub" id="sheetSub"></div>
+      </div>
+    </div>
+    <div class="sheet-body">
+      <div class="sheet-now" id="sheetNow"></div>
+      <ul class="sheet-levels" id="sheetLevels"></ul>
+      <div class="sheet-note" id="sheetNote"></div>
+    </div>
+    <div class="sheet-foot">
+      <div class="pts-line">🌐 Поинты: <b id="sheetPts">0</b></div>
+      <button class="btn primary" id="upgradeBtn">Улучшить</button>
+    </div>
+  </div>
+
+  <div id="toasts"></div>
+  <div id="gate" hidden><div class="gate-box"><div class="gate-ico" id="gateIco">📱</div><div class="gate-text" id="gateText"></div></div></div>
+</div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
