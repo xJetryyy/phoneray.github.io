@@ -36,6 +36,8 @@
         <span>Команды</span><span class="chev">▾</span>
       </button>
       <div class="group-body" id="cmdGroup"></div>
+      <div class="nav-divider">— — — СИМУЛЯЦИЯ — — —</div>
+      <div class="group-body" id="simGroup"></div>
     </nav>
     <div class="side-foot">Остальные команды бота переедут сюда постепенно</div>
   </aside>
@@ -93,6 +95,7 @@
     <section class="page" id="page-tel"></section>
     <section class="page" id="page-pc"></section>
     <section class="page" id="page-upgrades"></section>
+    <section class="page" id="page-improve"></section>
 
   </main>
 
@@ -114,6 +117,27 @@
     <div class="sheet-foot">
       <div class="pts-line">🌐 Поинты: <b id="sheetPts">0</b></div>
       <button class="btn primary" id="upgradeBtn">Улучшить</button>
+    </div>
+  </div>
+
+  <div id="isheetScrim"></div>
+  <div id="isheet" aria-hidden="true">
+    <div class="sheet-handle"></div>
+    <div class="sheet-head">
+      <div class="sheet-ico" id="isheetIco">🔬</div>
+      <div>
+        <div class="sheet-title" id="isheetTitle">Улучшение</div>
+        <div class="sheet-sub" id="isheetSub"></div>
+      </div>
+    </div>
+    <div class="sheet-body">
+      <div class="isheet-desc" id="isheetDesc"></div>
+      <div class="isheet-facts" id="isheetFacts"></div>
+      <div class="sheet-note" id="isheetNote"></div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn primary" id="researchBtn">Изучить</button>
+      <div class="pts-line">Баланс: <b id="isheetPt">0</b> PT</div>
     </div>
   </div>
 

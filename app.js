@@ -512,12 +512,224 @@
     };
   }
 
+  /* ---------------- улучшения симуляции ---------------- */
+  const SLOT_W = 96, SLOTS_PER_YEAR = 3, YEAR_W = SLOT_W * SLOTS_PER_YEAR, LANE_H = 96, BRANCH_GAP = 14;
+  const STRIP_W = 30, HEAD_H = 44, NODE_W = 78, NODE_H = 46;
+  const LANE_ICONS = { ram: '🧠', rom: '💾', battery: '🔋', cpu: '⚙️', screen: '🖥️' };
+
+  function fmtDur(s) {
+    s = Math.max(0, Math.ceil(s));
+    if (s < 60) return s + ' с';
+    const m = Math.floor(s / 60);
+    return m < 60 ? m + ' мин ' + pad2(s % 60) + ' с' : Math.floor(m / 60) + ' ч ' + pad2(m % 60) + ' мин';
+  }
+
+  function buildImprove(root) {
+    root.innerHTML =
+      '<div class="imp-page"><div class="imp-bar"><div class="imp-date"></div><div class="imp-pt"></div></div>' +
+      '<div class="imp-note" hidden></div><div class="imp-scroll"><div class="imp-grid"></div></div></div>';
+    const bar = $('.imp-bar', root), dateEl = $('.imp-date', root), ptEl = $('.imp-pt', root);
+    const noteEl = $('.imp-note', root), scroller = $('.imp-scroll', root), grid = $('.imp-grid', root);
+    const m = { data: null, selected: null, pt: 0, nextAt: 0, tick: null, poll: null, scrolled: false };
+    const sheet = $('#isheet'), scrim = $('#isheetScrim');
+    let openedAt = 0;
+
+    const branchColor = (k) => (m.data.branches.find((b) => b.key === k) || {}).color || '#8b95ad';
+    const perkByKey = (k) => m.data.perks.find((p) => p.key === k);
+
+    function laneLayout() {   // верхняя координата каждой дорожки (между ветками — небольшой зазор)
+      const top = {}; let y = 0, prev = null;
+      m.data.lanes.forEach((l) => { if (prev && prev !== l.branch) y += BRANCH_GAP; top[l.key] = y; y += LANE_H; prev = l.branch; });
+      return { top, height: y };
+    }
+
+    function render() {
+      const d = m.data;
+      const years = []; for (let y = d.first_year; y <= d.last_year; y++) years.push(y);
+      const { top, height } = laneLayout();
+      const W = years.length * YEAR_W;
+      grid.innerHTML = '';
+      grid.style.gridTemplateColumns = STRIP_W + 'px ' + W + 'px';
+      grid.style.gridTemplateRows = HEAD_H + 'px ' + height + 'px';
+
+      grid.appendChild(el('div', 'imp-corner'));
+      const head = el('div', 'imp-years'); head.style.width = W + 'px';
+      years.forEach((y) => {
+        const c = el('div', 'imp-year' + (y === d.year ? ' now' : y > d.year ? ' future' : ''), String(y));
+        c.style.width = YEAR_W + 'px'; head.appendChild(c);
+      });
+      grid.appendChild(head);
+
+      const strips = el('div', 'imp-strips'); strips.style.height = height + 'px';
+      d.branches.forEach((b) => {
+        const ls = d.lanes.filter((l) => l.branch === b.key); if (!ls.length) return;
+        const st = el('div', 'imp-strip', '<span>' + esc(b.title) + '</span>');
+        st.style.background = b.color; st.style.top = top[ls[0].key] + 'px';
+        st.style.height = (top[ls[ls.length - 1].key] + LANE_H - top[ls[0].key]) + 'px';
+        strips.appendChild(st);
+      });
+      grid.appendChild(strips);
+
+      const canvas = el('div', 'imp-canvas'); canvas.style.width = W + 'px'; canvas.style.height = height + 'px';
+      years.forEach((y, i) => {   // вертикальные границы годов
+        const line = el('div', 'imp-vline' + (y > d.year ? ' future' : '')); line.style.left = (i * YEAR_W) + 'px'; canvas.appendChild(line);
+      });
+      d.lanes.forEach((l) => {    // фон дорожки
+        const row = el('div', 'imp-lane'); row.style.top = top[l.key] + 'px'; row.style.height = LANE_H + 'px';
+        row.style.setProperty('--bc', branchColor(l.branch));
+        row.appendChild(el('div', 'imp-lane-name', (LANE_ICONS[l.key] || '') + ' ' + esc(l.title)));
+        canvas.appendChild(row);
+      });
+
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'imp-lines'); svg.setAttribute('width', W); svg.setAttribute('height', height);
+      canvas.appendChild(svg);
+      const pos = (p) => ({ x: (years.indexOf(p.year) * SLOTS_PER_YEAR + p.slot) * SLOT_W + SLOT_W / 2, y: top[p.lane] + LANE_H / 2 + 8 });
+
+      // линии идут вдоль дорожки от перка к перку (и дальше вправо); закрашены до последнего изученного
+      d.lanes.forEach((l) => {
+        const chain = d.perks.filter((p) => p.lane === l.key).sort((x, y) => (x.year - y.year) || (x.slot - y.slot));
+        chain.forEach((p, i) => {
+          const A = pos(p), nxt = chain[i + 1];
+          const x2 = nxt ? pos(nxt).x : W;
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          path.setAttribute('d', 'M' + A.x + ',' + A.y + ' L' + x2 + ',' + A.y);
+          path.setAttribute('class', p.status === 'owned' ? 'lit' : (nxt && nxt.status === 'locked_year') || (!nxt && p.status === 'locked_year') ? 'dead' : '');
+          path.style.setProperty('--bc', branchColor(p.branch));
+          svg.appendChild(path);
+        });
+      });
+
+      d.perks.forEach((p) => {
+        const P = pos(p), color = branchColor(p.branch);
+        const n = el('button', 'inode ' + p.status);
+        n.type = 'button'; n.dataset.key = p.key; n.style.setProperty('--bc', color);
+        n.style.left = (P.x - NODE_W / 2) + 'px'; n.style.top = (P.y - NODE_H / 2) + 'px';
+        n.style.width = NODE_W + 'px'; n.style.height = NODE_H + 'px';
+        const mark = p.status === 'owned' ? '✓' : p.status === 'researching' ? '⏳' : '';
+        n.innerHTML = '<span class="inm">' + esc(p.short) + '</span>' + (mark ? '<i class="inmark">' + mark + '</i>' : '');
+        if (p.status === 'locked_year') n.disabled = true;
+        n.addEventListener('click', () => openSheet(p.key));
+        canvas.appendChild(n);
+      });
+      grid.appendChild(canvas);
+
+      scrollToNow(0);
+      paintBar();
+    }
+
+    function scrollToNow(tries) {   // открываем колонку текущего года игрока (ждём, пока вкладка получит размеры)
+      if (m.scrolled || !m.data) return;
+      if (scroller.scrollWidth <= scroller.clientWidth + 2) { if (tries < 20) setTimeout(() => scrollToNow(tries + 1), 150); return; }
+      m.scrolled = true;
+      const idx = Math.min(m.data.last_year - m.data.first_year, Math.max(0, m.data.year - m.data.first_year));
+      scroller.scrollLeft = Math.max(0, idx * YEAR_W - 8);
+    }
+
+    function paintBar() {
+      const d = m.data; if (!d) return;
+      dateEl.innerHTML = '📅 ' + esc(d.date) + ' · <b>' + d.year + '</b>';
+      ptEl.innerHTML = '<b>' + fmtNum(m.pt) + '</b> PT';
+      if (d.quiet) {
+        noteEl.hidden = false;
+        noteEl.textContent = '🌙 С 23:00 до 09:00 по МСК PT не начисляются. Начисление возобновится через ' + fmtDur(d.change_in) + '.';
+      } else noteEl.hidden = true;
+    }
+
+    function startTick() {   // между обновлениями с сервера считаем PT сами: +1 каждые N секунд
+      clearInterval(m.tick);
+      m.tick = setInterval(() => {
+        const d = m.data; if (!d || d.quiet) return;
+        let changed = false;
+        while (Date.now() >= m.nextAt) { m.pt += 1; m.nextAt += d.pt_seconds * 1000; changed = true; }
+        if (changed) { ptEl.innerHTML = '<b>' + fmtNum(m.pt) + '</b> PT'; if (m.selected) fillSheet(); }
+        if (d.researching) { const p = perkByKey(d.researching); if (p && p.finish_at_ms && Date.now() >= p.finish_at_ms) load(); else if (m.selected) fillSheet(); }
+      }, 1000);
+    }
+
+    function apply(d) {
+      const now = Date.now();
+      d.perks.forEach((p) => { p.finish_at_ms = p.finish_in != null ? now + p.finish_in * 1000 : null; });
+      m.data = d; m.pt = d.pt;
+      m.nextAt = d.next_pt_in != null ? now + d.next_pt_in * 1000 : 0;
+      // граница ночного окна (23:00 МСК): после неё тики остановятся только после следующей загрузки — перезагружаем
+      clearTimeout(m.edge); m.edge = setTimeout(() => load(), Math.max(2000, d.change_in * 1000 + 1500));
+      render(); startTick();
+      if (m.selected) fillSheet();
+    }
+
+    async function load(first) {
+      const d = await api('/api/improve');
+      if (!d || !d.ok) { if (first) toast('Не удалось загрузить улучшения', 'bad'); return; }
+      if (!d.has_brand) {
+        grid.innerHTML = ''; bar.hidden = true;
+        grid.appendChild(el('div', 'imp-empty', '🏷️ Улучшения открываются после создания бренда.<br>Создайте его командой <b>/brend</b> в боте.'));
+        m.data = null; return;
+      }
+      bar.hidden = false;
+      apply(d);
+    }
+
+    /* шторка улучшения */
+    function openSheet(key) {
+      m.selected = key; openedAt = Date.now(); haptic('light'); fillSheet();
+      sheet.classList.add('show'); scrim.classList.add('show'); sheet.setAttribute('aria-hidden', 'false');
+    }
+    function closeSheet() { m.selected = null; sheet.classList.remove('show'); scrim.classList.remove('show'); sheet.setAttribute('aria-hidden', 'true'); }
+    function fillSheet() {
+      const p = m.selected && m.data && perkByKey(m.selected); if (!p) return;
+      sheet.style.setProperty('--tc', branchColor(p.branch));
+      $('#isheetIco').textContent = LANE_ICONS[p.lane] || '🔬';
+      $('#isheetTitle').textContent = p.name;
+      $('#isheetDesc').textContent = p.desc;
+      const stateTxt = { owned: 'Изучено', researching: 'Изучается', available: 'Готово', locked_chain: 'Нужно предыдущее', locked_year: 'Откроется в ' + p.year };
+      $('#isheetSub').textContent = p.category + ' · ' + stateTxt[p.status];
+      const stat = (k, v) => '<div class="istat"><span>' + esc(k) + '</span><b>' + esc(v) + '</b></div>';
+      let html = '<div class="istats">' + stat('Стоимость', fmtNum(p.cost) + ' PT') + stat('Время', p.research_days + ' дн.') + stat('Год', String(p.year)) + '</div>';
+      if (p.prereq) html += '<div class="ireq ' + (perkByKey(p.prereq).status === 'owned' ? 'ok' : '') + '">Требуется: ' + esc(p.prereq_name) + '</div>';
+      html += '<div class="ireq ok">Приводит к: деталь «' + esc(p.category) + '» при разборе — «' + esc(p.name) + '» (если изучено несколько улучшений категории, выбирается случайное)</div>';
+      $('#isheetFacts').innerHTML = html;
+      const b = $('#researchBtn'), note = $('#isheetNote');
+      note.textContent = '';
+      const busy = m.data.researching && m.data.researching !== p.key;
+      if (p.status === 'owned') { b.textContent = 'Изучено ✓'; b.disabled = true; }
+      else if (p.status === 'researching') { b.textContent = 'Изучается… ' + fmtDur((p.finish_at_ms - Date.now()) / 1000); b.disabled = true; }
+      else if (p.status === 'locked_chain') { b.textContent = 'Изучить'; b.disabled = true; note.textContent = 'Сначала изучите «' + p.prereq_name + '».'; }
+      else if (busy) { b.textContent = 'Изучить'; b.disabled = true; note.textContent = 'Одновременно изучается только одно улучшение.'; }
+      else if (m.pt < p.cost) { b.textContent = 'Не хватает PT'; b.disabled = true; note.textContent = 'Нужно ещё ' + fmtNum(p.cost - m.pt) + ' PT.'; }
+      else { b.textContent = 'Изучить · ' + fmtNum(p.cost) + ' PT'; b.disabled = false; }
+      $('#isheetPt').textContent = fmtNum(m.pt);
+    }
+    scrim.addEventListener('click', () => { if (Date.now() - openedAt > 500) closeSheet(); });
+    $('#researchBtn').addEventListener('click', async () => {
+      const key = m.selected; if (!key) return;
+      const b = $('#researchBtn'); b.disabled = true;
+      const res = await api('/api/improve/research', { method: 'POST', body: { key } });
+      if (res && res.ok && res.has_brand) {
+        apply(res);
+        if (res.started) { haptic('success'); toast('Изучение начато: ' + perkByKey(key).name, 'good'); }
+        else {
+          const msgs = { pt: 'Не хватает PT', busy: 'Уже идёт другое изучение', chain: 'Сначала изучите предыдущее улучшение', year: 'Это улучшение откроется в своём году', owned: 'Уже изучено' };
+          haptic('error'); toast(msgs[res.error] || 'Не получилось', 'bad');
+        }
+      } else toast((res && res.message) || 'Не получилось начать изучение', 'bad');
+      fillSheet();
+    });
+
+    return {
+      onShow() { load(!m.data); clearInterval(m.poll); m.poll = setInterval(() => load(), 60000); },
+      onHide() { closeSheet(); clearInterval(m.poll); },
+      _debug: m,
+    };
+  }
+
   /* ---------------- вкладки и меню ---------------- */
   const TABS = [
     { id: 'home', title: 'Главная', icon: '🏠', main: true },
     { id: 'tel', title: 'Тел', icon: '📱', build: buildRoulette('tel', { title: '📱 Тел', emoji: '📱', sub: 'Нажмите «Крутить!» — и получите случайный телефон. Он сразу появится в инвентаре бота.' }) },
     { id: 'pc', title: 'Пк', icon: '🖥', build: buildRoulette('pc', { title: '🖥 Пк', emoji: '🖥', sub: 'Нажмите «Крутить!» — и получите случайную деталь для ПК. Она сразу появится в инвентаре бота.' }) },
     { id: 'upgrades', title: 'Апгрейды', icon: '🌳', build: buildUpgrades },
+    { id: 'improve', title: 'Улучшения', icon: '🔬', build: buildImprove, sim: true },   // раздел «СИМУЛЯЦИЯ» в меню
   ];
   const titleOf = (id) => (TABS.find((t) => t.id === id) || {}).title || 'PhoneRay';
 
@@ -541,7 +753,7 @@
     try {
       if (tg) {
         if (id === 'home') tg.BackButton.hide(); else tg.BackButton.show();
-        if (id === 'upgrades' && tg.disableVerticalSwipes) tg.disableVerticalSwipes();   // чтобы дерево не закрывало приложение
+        if ((id === 'upgrades' || id === 'improve') && tg.disableVerticalSwipes) tg.disableVerticalSwipes();   // чтобы дерево не закрывало приложение
         else if (tg.enableVerticalSwipes) tg.enableVerticalSwipes();
       }
     } catch (e) { /* старые клиенты */ }
@@ -549,8 +761,8 @@
   }
 
   function buildNav() {
-    const group = $('#cmdGroup');
     TABS.filter((t) => !t.main).forEach((t) => {
+      const group = $(t.sim ? '#simGroup' : '#cmdGroup');
       const b = el('button', 'nav-item', '<span class="nav-ico">' + t.icon + '</span><span>' + esc(t.title) + '</span>');
       b.type = 'button'; b.dataset.tab = t.id;
       group.appendChild(b);
@@ -574,7 +786,7 @@
     document.addEventListener('touchend', (e) => {
       if (sx == null) return;
       const t = e.changedTouches[0], dx = t.clientX - sx, dy = Math.abs(t.clientY - sy);
-      if (state.tab !== 'upgrades' && dy < 40) {
+      if (state.tab !== 'upgrades' && state.tab !== 'improve' && dy < 40) {
         if (sx < 24 && dx > 70) setMenu(true);
       }
       if (dx < -70 && dy < 40 && document.body.classList.contains('menu-open')) setMenu(false);
@@ -590,7 +802,25 @@
 
   /* ---------------- демо-режим (?demo) ---------------- */
   const DEMO_PERKS = {"trees": [{"key": "loot", "title": "🎯 Лут", "perks": [{"key": "junk", "title": "Шанс на хлам ниже на", "short": "Хлам", "footnote": false, "level": 0, "max": 4, "levels": ["1%", "3%", "4%", "6%"]}, {"key": "meteor", "title": "Шанс на метеорит при получении карточки выше на", "short": "Метеорит", "footnote": true, "level": 0, "max": 4, "levels": ["5%", "10%", "15%", "20%"]}, {"key": "new", "title": "Шанс на статус «Новый» выше на", "short": "Статус «Новый»", "footnote": false, "level": 0, "max": 4, "levels": ["5%", "10%", "15%", "20%"]}, {"key": "pricebonus", "title": "Бонус к цене", "short": "Бонус к цене", "footnote": false, "level": 0, "max": 4, "levels": ["+3% с шансом 5%", "+5% с шансом 10%", "+10% с шансом 20%", "+15% с шансом 25%"]}, {"key": "updcost", "title": "Цена апдейта ниже на", "short": "Цена апдейта", "footnote": false, "level": 0, "max": 3, "levels": ["10%", "15%", "20%"]}, {"key": "gsell", "title": "Глобал продажа: сразу категорий", "short": "Глобал продажа", "footnote": false, "level": 0, "max": 2, "levels": ["2", "3"]}, {"key": "farm_income", "title": "Телефоны на ферме приносят больше дохода на", "short": "Доход фермы", "footnote": false, "level": 0, "max": 4, "levels": ["5%", "10%", "15%", "20%"]}, {"key": "pc_break", "title": "Шанс на поломки ПК ниже на", "short": "Поломки ПК", "footnote": false, "level": 0, "max": 4, "levels": ["5%", "10%", "15%", "20%"]}]}, {"key": "time", "title": "⏱ Время", "perks": [{"key": "cd_tel", "title": "КД на «тел» ниже на", "short": "КД «тел»", "footnote": false, "level": 0, "max": 3, "levels": ["30 мин.", "60 мин.", "90 мин."]}, {"key": "cd_pc", "title": "КД на «пк» ниже на", "short": "КД «пк»", "footnote": false, "level": 0, "max": 3, "levels": ["1 ч.", "2 ч.", "3 ч."]}, {"key": "cd_cube", "title": "КД на «бросок» ниже на", "short": "КД «бросок»", "footnote": false, "level": 0, "max": 3, "levels": ["6 ч.", "12 ч.", "24 ч."]}, {"key": "farm_wear", "title": "Время потери прочности телефона на ферме ниже на", "short": "Износ фермы", "footnote": false, "level": 0, "max": 3, "levels": ["10 мин.", "20 мин.", "30 мин."]}, {"key": "repair_time", "title": "Время ожидания починки телефона меньше на", "short": "Время ремонта", "footnote": false, "level": 0, "max": 4, "levels": ["15%", "25%", "40%", "50%"]}]}, {"key": "control", "title": "🎛 Контроль", "perks": [{"key": "ransom", "title": "Шанс на выкуп на ферме выше на", "short": "Выкуп", "footnote": false, "level": 0, "max": 4, "levels": ["10%", "20%", "30%", "50%"]}, {"key": "event_cut", "title": "Шанс ивента на ферме ниже на", "short": "Ивенты фермы", "footnote": false, "level": 0, "max": 4, "levels": ["10%", "15%", "20%", "25%"]}, {"key": "boost", "title": "Шанс буста телефона на ферме выше на", "short": "Буст фермы", "footnote": false, "level": 0, "max": 4, "levels": ["0%", "5%", "5%", "15%"]}]}], "cost": 1, "point_name": "🌐 Поинт"};
-  const demo = { points: 4, balance: 128450, levels: {}, tel: 0, pc: 0 };
+  const DEMO_IMPROVE = (function () {
+    const P = (key, lane, branch, slot, short, name, cost, prereq) => ({ key, lane, branch, year: 2000, slot, short, name, cost, prereq: prereq || null,
+      prereq_name: null, desc: 'Демо-описание: ' + name + '.', category: { ram: 'RAM', rom: 'ROM', battery: 'Батарея', cpu: 'Процессор', screen: 'Экран' }[lane], research_days: 1 });
+    const perks = [P('ram_512', 'ram', 'memory', 0, 'RAM 512', '512MB RAM', 65), P('rom_1gb', 'rom', 'memory', 0, 'ROM 1GB', '1GB ROM', 105),
+      P('bat_1500', 'battery', 'battery', 0, '1500mAh', '1500mAh', 132),
+      P('cpu_c166', 'cpu', 'screen_cpu', 0, 'C166', 'Siemens C166', 60), P('cpu_mad2', 'cpu', 'screen_cpu', 1, 'MAD2', 'Texas Instruments MAD2', 102, 'cpu_c166'),
+      P('cpu_sa1110', 'cpu', 'screen_cpu', 2, 'SA-1110', 'Intel StrongARM SA-1110', 156, 'cpu_mad2'),
+      P('scr_seg', 'screen', 'screen_cpu', 0, 'Сегм. LCD', 'Монохромный сегментный LCD', 60), P('scr_gray', 'screen', 'screen_cpu', 1, 'Gray LCD', 'Монохромный графический LCD с градациями серого', 101, 'scr_seg'),
+      P('scr_stn', 'screen', 'screen_cpu', 2, 'STN', 'Рефлективный STN-экран', 163, 'scr_gray')];
+    [['ram_1gb', 'ram', 'memory', 'RAM 1GB', '1GB RAM', 146, 'ram_512'], ['rom_2gb', 'rom', 'memory', 'ROM 2GB', '2GB ROM', 215, 'rom_1gb'], ['bat_2000', 'battery', 'battery', '2000mAh', '2000mAh', 185, 'bat_1500'],
+      ['cpu_egold', 'cpu', 'screen_cpu', 'E-Gold', 'Infineon E-Gold', 181, 'cpu_sa1110', 0], ['cpu_calypso', 'cpu', 'screen_cpu', 'Calypso+', 'Texas Instruments Calypso+', 212, 'cpu_egold', 1],
+      ['scr_monohr', 'screen', 'screen_cpu', 'Mono HR', 'Монохромный LCD высокого разрешения с инверсией', 207, 'scr_stn', 0], ['scr_cstn', 'screen', 'screen_cpu', 'Color STN', 'Пассивный цветной STN-экран', 261, 'scr_monohr', 1],
+      ['scr_tft', 'screen', 'screen_cpu', 'TFT/UFB', 'Активная цветная матрица UFB или рефлективный TFT', 319, 'scr_cstn', 2]]
+      .forEach((r) => { const p = P(r[0], r[1], r[2], r[7] || 0, r[3], r[4], r[5], r[6]); p.year = 2001; perks.push(p); });
+    perks.forEach((p) => { if (p.prereq) p.prereq_name = perks.find((x) => x.key === p.prereq).name; });
+    return { perks, branches: [{ key: 'memory', title: 'Память', color: '#a855f7' }, { key: 'battery', title: 'Батарея', color: '#22c55e' }, { key: 'screen_cpu', title: 'Экраны и процессор', color: '#ef4444' }],
+      lanes: [['ram', 'memory'], ['rom', 'memory'], ['battery', 'battery'], ['cpu', 'screen_cpu'], ['screen', 'screen_cpu']].map((l) => ({ key: l[0], branch: l[1], title: { ram: 'RAM', rom: 'ROM', battery: 'Батарея', cpu: 'Процессор', screen: 'Экран' }[l[0]] })) };
+  })();
+  const demo = { impPt: 300, imp: { owned: {}, researching: null, until: 0 }, points: 4, balance: 128450, levels: {}, tel: 0, pc: 0 };
   async function demoApi(path, opts) {
     await sleep(120);
     const kind = (path.match(/\/(tel|pc)$/) || [])[1];
@@ -611,6 +841,25 @@
         : '🖥 Новая деталь!\n\n📦 Название: <b>Ryzen 5 5600</b>\n🔧 Категория: Процессор\n🏷 Редкость: ' + rar + '\n💰 Цена: 20 000₽';
       return { ok: true, cards: [{ kind, id: 1, name: 'Демо', rarity: rar, status: 'Новый', price: 3000, photo: null, caption, mutation: null, sanctioned: false }],
         notices: [], tel: { remaining: kind === 'tel' ? 10800 : 0, free: 0 }, pc: { remaining: kind === 'pc' ? 10800 : 0, free: 0 } };
+    }
+    if (path === '/api/improve' || path === '/api/improve/research') {
+      let started = false, error = null;
+      const perks = DEMO_IMPROVE.perks;
+      if (path.endsWith('research')) {
+        const p = perks.find((x) => x.key === opts.body.key);
+        const pre = p.prereq && perks.find((x) => x.key === p.prereq);
+        if (demo.imp.researching) error = 'busy'; else if (pre && !demo.imp.owned[pre.key]) error = 'chain';
+        else if (demo.impPt < p.cost) error = 'pt'; else { demo.impPt -= p.cost; demo.imp.researching = p.key; demo.imp.until = Date.now() + 15000; started = true; }
+      }
+      if (demo.imp.researching && Date.now() >= demo.imp.until) { demo.imp.owned[demo.imp.researching] = true; demo.imp.researching = null; }
+      const out = perks.map((p) => {
+        const pre = p.prereq && demo.imp.owned[p.prereq];
+        const status = demo.imp.owned[p.key] ? 'owned' : demo.imp.researching === p.key ? 'researching' : (p.prereq && !pre) ? 'locked_chain' : 'available';
+        return { ...p, status, finish_in: status === 'researching' ? Math.max(0, Math.ceil((demo.imp.until - Date.now()) / 1000)) : null };
+      });
+      return { ok: true, has_brand: true, pt: demo.impPt, year: 2001, date: '1 января 2001 г.', first_year: 2000, last_year: 2010, pt_name: 'PT', pt_seconds: 10,
+        quiet: false, change_in: 36000, next_pt_in: 10, researching: demo.imp.researching, branches: DEMO_IMPROVE.branches, lanes: DEMO_IMPROVE.lanes,
+        perks: out, started, error };
     }
     if (path === '/api/perks' || path === '/api/perks/upgrade') {
       let upgraded = false, error = null;
